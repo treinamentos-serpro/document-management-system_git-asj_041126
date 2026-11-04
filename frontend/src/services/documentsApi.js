@@ -43,3 +43,7 @@ export async function downloadDocument(id) {
   const response = await request(`/documents/${encodeURIComponent(id)}/download`);
   return response.blob();
 }
+
+export async function deleteDocument(id) {
+  await request(`/documents/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}

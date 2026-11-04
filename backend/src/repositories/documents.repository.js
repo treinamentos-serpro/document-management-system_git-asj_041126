@@ -17,6 +17,10 @@ function createDocumentsRepository() {
     findById(id) {
       return documentsById.get(id) || null;
     },
+
+    remove(id) {
+      return documentsById.delete(id);
+    },
   };
 }
 

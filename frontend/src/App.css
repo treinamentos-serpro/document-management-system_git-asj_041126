@@ -395,7 +395,7 @@ h1 {
 }
 
 .document-table th:nth-child(1) {
-  width: 47%;
+  width: 40%;
 }
 
 .document-table th:nth-child(2) {
@@ -407,7 +407,7 @@ h1 {
 }
 
 .document-table th:nth-child(4) {
-  width: 14%;
+  width: 29%;
 }
 
 .document-table td {
@@ -450,7 +450,28 @@ h1 {
 }
 
 .action-cell {
-  text-align: right;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.button-delete {
+  min-height: 31px;
+  padding: 0 8px;
+  border-color: #e8c9c2;
+  background: transparent;
+  color: #a64e3c;
+}
+
+.button-delete:hover:not(:disabled) {
+  border-color: #a64e3c;
+  background: #fbefec;
+}
+
+.button-delete > span {
+  font-size: 15px;
 }
 
 .button-download {

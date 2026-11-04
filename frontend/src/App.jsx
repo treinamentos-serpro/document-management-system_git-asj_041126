@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { downloadDocument, listDocuments, uploadDocument } from './services/documentsApi.js';
+import {
+  deleteDocument,
+  downloadDocument,
+  listDocuments,
+  uploadDocument,
+} from './services/documentsApi.js';
 import DocumentList from './components/DocumentList.jsx';
 import UploadComponent from './components/UploadComponent.jsx';
 import './App.css';
@@ -10,6 +15,7 @@ export default function App() {
   const [listError, setListError] = useState('');
   const [uploadError, setUploadError] = useState('');
   const [downloadError, setDownloadError] = useState('');
+  const [deleteError, setDeleteError] = useState('');
   const [uploadNotice, setUploadNotice] = useState('');
   const [isUploading, setIsUploading] = useState(false);
 
@@ -59,6 +65,19 @@ export default function App() {
     }
   }
 
+  async function handleDelete(documentItem) {
+    setDeleteError('');
+
+    try {
+      await deleteDocument(documentItem.id);
+      setDocuments((currentDocuments) => currentDocuments.filter(
+        (currentDocument) => currentDocument.id !== documentItem.id,
+      ));
+    } catch (error) {
+      setDeleteError(error.message);
+    }
+  }
+
   return (
     <div className="app-shell">
       <header className="masthead">
@@ -97,10 +116,12 @@ export default function App() {
           <section className="library-column" aria-labelledby="library-title">
             <DocumentList
               actionError={downloadError}
+              deleteError={deleteError}
               documents={documents}
               error={listError}
               isLoading={isLoading}
               onDownload={handleDownload}
+              onDelete={handleDelete}
               onRefresh={refreshDocuments}
             />
           </section>

@@ -27,6 +27,15 @@ function createDocumentsController({ documentsService }) {
       }
     },
 
+    async remove(req, res, next) {
+      try {
+        await documentsService.deleteDocument(req.params.id);
+        return res.status(204).end();
+      } catch (error) {
+        return next(error);
+      }
+    },
+
     async download(req, res, next) {
       try {
         const { document, filePath } = await documentsService.getDocumentDownload(req.params.id);

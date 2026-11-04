@@ -1,4 +1,5 @@
 import DownloadButton from './DownloadButton.jsx';
+import DeleteButton from './DeleteButton.jsx';
 import { formatFileSize } from '../utils/formatFileSize.js';
 
 function formatDate(value) {
@@ -10,9 +11,11 @@ function formatDate(value) {
 
 export default function DocumentList({
   actionError,
+  deleteError,
   documents,
   error,
   isLoading,
+  onDelete,
   onDownload,
   onRefresh,
 }) {
@@ -36,6 +39,7 @@ export default function DocumentList({
       </div>
 
       {actionError && <p className="feedback feedback-error list-feedback" role="alert">{actionError}</p>}
+      {deleteError && <p className="feedback feedback-error list-feedback" role="alert">{deleteError}</p>}
       {error && <p className="feedback feedback-error list-feedback" role="alert">{error}</p>}
 
       {isLoading ? (
@@ -69,6 +73,7 @@ export default function DocumentList({
                   <td className="metadata-cell">{formatDate(documentItem.uploadedAt)}</td>
                   <td className="action-cell">
                     <DownloadButton documentItem={documentItem} onDownload={onDownload} />
+                    <DeleteButton documentItem={documentItem} onDelete={onDelete} />
                   </td>
                 </tr>
               ))}

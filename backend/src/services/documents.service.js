@@ -54,6 +54,26 @@ function createDocumentsService({ documentsRepository, filesRepository }) {
       return documentsRepository.findAll();
     },
 
+    async deleteDocument(id) {
+      const document = documentsRepository.findById(id);
+      if (!document) {
+        throw createServiceError(404, 'DOCUMENT_NOT_FOUND', 'Documento não encontrado.');
+      }
+
+      try {
+        await filesRepository.remove(document.id);
+      } catch (error) {
+        throw createServiceError(
+          500,
+          'STORAGE_ERROR',
+          'Não foi possível excluir o documento.',
+          error,
+        );
+      }
+
+      documentsRepository.remove(document.id);
+    },
+
     async getDocumentDownload(id) {
       const document = documentsRepository.findById(id);
       if (!document) {

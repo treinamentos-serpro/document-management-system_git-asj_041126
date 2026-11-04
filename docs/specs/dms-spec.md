@@ -5,7 +5,7 @@
 
 ## 1. Objetivo
 
-Permitir que um usuário envie, liste e baixe documentos por meio de uma aplicação web, mantendo os arquivos no filesystem local e os metadados em memória.
+Permitir que um usuário envie, liste, baixe e exclua documentos por meio de uma aplicação web, mantendo os arquivos no filesystem local e os metadados em memória.
 
 ## 2. Escopo
 
@@ -15,6 +15,7 @@ Permitir que um usuário envie, liste e baixe documentos por meio de uma aplica�
 - Gravar os arquivos localmente em `backend/storage`, usando Multer com `diskStorage`.
 - Manter os metadados dos documentos em memória enquanto o processo do backend estiver ativo.
 - Listar documentos e baixar um documento pelo seu identificador.
+- Excluir um documento pelo seu identificador, removendo seu arquivo local e seus metadados em memória.
 - Disponibilizar uma interface React que consome a API por meio do prefixo `/api`.
 - Usar um proprietário lógico local configurável, sem autenticação ou autorização no MVP.
 
@@ -23,7 +24,7 @@ Permitir que um usuário envie, liste e baixe documentos por meio de uma aplica�
 - Armazenamento em nuvem, serviços de upload externos ou banco de dados.
 - Persistência ou recuperação automática de metadados após reiniciar o backend.
 - Autenticação, autorização, isolamento real entre usuários ou compartilhamento de documentos.
-- Versionamento, edição, exclusão, busca, pastas e pré-visualização de documentos.
+- Versionamento, edição, busca, pastas e pré-visualização de documentos.
 - Upload de múltiplos arquivos em uma única requisição.
 
 ## 3. Requisitos funcionais
@@ -34,6 +35,7 @@ Permitir que um usuário envie, liste e baixe documentos por meio de uma aplica�
 | RF-02 | O usuário pode listar os documentos disponíveis no processo atual. | A API responde `200 OK` com um array JSON de metadados, sem caminhos internos. A lista é ordenada do mais recente para o mais antigo; empates são ordenados pelo `id`. Sem documentos, retorna `[]`. Como o MVP não tem autenticação, a listagem não representa isolamento ou controle de acesso por usuário. |
 | RF-03 | O usuário pode baixar um documento pelo identificador. | Para um identificador conhecido, a API transmite o conteúdo como anexo e usa o nome original seguro no cabeçalho `Content-Disposition`. A resposta não revela caminhos locais. Se o identificador não estiver registrado ou o arquivo não existir, responde `404 Not Found`. |
 | RF-04 | O usuário recebe erros de API em formato consistente. | Erros esperados usam o código HTTP definido nos contratos e um corpo JSON `{ "error": { "code": "...", "message": "..." } }`. Mensagens não expõem stack traces, caminhos locais ou detalhes internos do filesystem. Respostas de download bem-sucedidas são binárias, não JSON. |
+| RF-05 | O usuário pode excluir um documento. | A API recebe o ID do documento, remove primeiro o arquivo local e então seus metadados em memória; responde `204 No Content` em sucesso. Um ID ausente ou desconhecido resulta em `404 Not Found`. Se a remoção física falhar, responde `500 Internal Server Error` sem remover os metadados. A interface pede confirmação e remove a linha após a resposta de sucesso. |
 
 ## 4. Requisitos não funcionais
 
@@ -46,7 +48,7 @@ Permitir que um usuário envie, liste e baixe documentos por meio de uma aplica�
 | RNF-05 | Configurações operacionais, incluindo porta, diretório de armazenamento, limite de upload e proprietário lógico padrão, são fornecidas por variáveis de ambiente com defaults documentados. Segredos não são armazenados no código. |
 | RNF-06 | O backend usa Node.js, Express e CommonJS; o frontend usa React, Vite e ES modules. A implementação permanece em JavaScript, sem TypeScript nesta fase. |
 | RNF-07 | A arquitetura do backend segue o fluxo `routes -> controllers -> services -> repositories`. Rotas delegam aos controllers; controllers tratam HTTP e validação básica; services concentram regras de negócio; repositories abstraem filesystem e metadados em memória. Camadas internas não dependem de Express ou de detalhes de apresentação. |
-| RNF-08 | O frontend acessa a API por `fetch` com prefixo `/api`. No desenvolvimento, o proxy do Vite remove esse prefixo e encaminha a chamada ao backend local. A interface deve apresentar estados de carregamento, sucesso, lista vazia e erro para upload/listagem/download. |
+| RNF-08 | O frontend acessa a API por `fetch` com prefixo `/api`. No desenvolvimento, o proxy do Vite remove esse prefixo e encaminha a chamada ao backend local. A interface deve apresentar estados de carregamento, sucesso, lista vazia e erro para upload/listagem/download/exclusão. |
 | RNF-09 | Os testes do backend usam o runner nativo `node:test`. Testes devem cobrir os contratos, validações, erros e limpeza em caso de falha; não exigem banco de dados ou armazenamento externo. |
 | RNF-10 | O MVP sem autenticação é adequado apenas a um ambiente local ou confiável. A API não deve ser apresentada como multiusuário seguro: qualquer cliente com acesso ao serviço pode enviar, listar e baixar os documentos disponíveis. |
 
@@ -89,7 +91,7 @@ O identificador também determina o nome interno de armazenamento. O arquivo nã
 
 ### Convenções
 
-- As rotas Express do backend são `/upload`, `/documents` e `/documents/:id/download`.
+- As rotas Express do backend são `/upload`, `/documents`, `/documents/:id` e `/documents/:id/download`.
 - O frontend chama essas rotas através de `/api`: por exemplo, `POST /api/upload`. O proxy de desenvolvimento do Vite remove `/api` antes de encaminhar ao backend.
 - O prefixo `/api` é de integração do frontend; os contratos também podem ser chamados diretamente no backend sem esse prefixo.
 - Os corpos JSON usam `application/json`; erros seguem o formato comum definido em RF-04.
@@ -132,6 +134,23 @@ Exemplo de chamada pelo frontend: `GET /api/documents`.
 | --- | --- | --- |
 | `500 Internal Server Error` | `METADATA_ERROR` | Falha inesperada ao consultar o repositório em memória. |
 
+### `DELETE /documents/:id`
+
+**Finalidade:** remover um documento e seus metadados do processo atual.
+
+**Requisição:** parâmetro `id` com UUID do documento; sem corpo.
+
+Exemplo de chamada pelo frontend: `DELETE /api/documents/{id}`.
+
+**Sucesso - `204 No Content`:** arquivo removido do filesystem local e metadados removidos da memória; resposta sem corpo.
+
+**Erros:**
+
+| Status | Código | Situação |
+| --- | --- | --- |
+| `404 Not Found` | `DOCUMENT_NOT_FOUND` | ID desconhecido ou sem metadados no processo atual. |
+| `500 Internal Server Error` | `STORAGE_ERROR` | Falha ao remover o arquivo local. Os metadados permanecem disponíveis. |
+
 ### `GET /documents/:id/download`
 
 **Finalidade:** baixar o arquivo associado a um identificador.
@@ -153,6 +172,7 @@ Exemplo de chamada pelo frontend: `GET /api/documents/{id}/download`.
 
 - A aplicação segue uma Clean Architecture simples no backend: routes, controllers, services e repositories, nessa direção de dependência.
 - A persistência do conteúdo é responsabilidade do repositório de arquivos e usa filesystem local com Multer `diskStorage`; a persistência de metadados é responsabilidade do repositório em memória.
+- A exclusão remove o arquivo do filesystem antes de remover o metadado, evitando ocultar um documento quando a operação de disco falha.
 - O fluxo de upload só publica metadados depois que o arquivo é gravado. Falha ao registrar metadados deve disparar tentativa de remoção do arquivo recém-criado.
 - A API nunca recebe do cliente um caminho de armazenamento e nunca usa `originalName` como nome físico do arquivo.
 - O frontend é construído com componentes React e chama a API por uma camada de serviço baseada em `fetch`, usando `/api` como base no desenvolvimento.
@@ -167,5 +187,5 @@ As etapas abaixo descrevem a implementação futura do produto em nível de entr
 1. **Estabelecer contratos e regras:** alinhar validação de upload, limites configuráveis, modelo de metadados, formato de erros e comportamento de limpeza em falhas.
 2. **Implementar upload e armazenamento local:** configurar `diskStorage`, gerar IDs controlados pelo servidor, gravar arquivos no diretório local e registrar metadados em memória.
 3. **Implementar consulta e download:** expor listagem ordenada e transmissão segura do arquivo pelo ID, tratando recursos ausentes e falhas de I/O.
-4. **Construir a experiência de usuário:** permitir seleção e envio de arquivo, exibir resultado/erros, listar documentos disponíveis e iniciar o download.
-5. **Integrar e validar o fluxo completo:** verificar contratos HTTP e estados da interface; cobrir sucesso, lista vazia, arquivo ausente, tamanho excedido, falhas de armazenamento e reinício com perda de metadados.
+4. **Construir a experiência de usuário:** permitir seleção e envio de arquivo, exibir resultado/erros, listar documentos disponíveis, baixar e excluir após confirmação.
+5. **Integrar e validar o fluxo completo:** verificar contratos HTTP e estados da interface; cobrir sucesso, lista vazia, arquivo ausente, tamanho excedido, exclusão, falhas de armazenamento e reinício com perda de metadados.

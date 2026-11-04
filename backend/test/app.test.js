@@ -30,46 +30,82 @@ after(async () => {
   await rm(storageDirectory, { recursive: true, force: true });
 });
 
+async function createTestDocument() {
+  const formData = new FormData();
+  formData.append('file', new Blob(['conteudo de teste'], { type: 'text/plain' }), 'teste.txt');
+
+  const response = await fetch(`${baseUrl}/upload`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  assert.strictEqual(response.status, 201);
+  return response.json();
+}
+
+async function deleteTestDocument(document) {
+  const response = await fetch(`${baseUrl}/documents/${document.id}`, { method: 'DELETE' });
+  assert.strictEqual(response.status, 204);
+  await assert.rejects(access(path.join(storageDirectory, document.id)), { code: 'ENOENT' });
+}
+
 test('o app backend é exportado', () => {
   assert.ok(app, 'o app deve estar definido');
   assert.strictEqual(typeof app, 'function', 'o app Express deve ser uma função');
 });
 
-test('faz upload, lista e baixa um documento', async () => {
-  const formData = new FormData();
-  formData.append('file', new Blob(['conteudo de teste'], { type: 'text/plain' }), 'teste.txt');
+test('POST /upload cria metadados e armazena o arquivo', async () => {
+  const document = await createTestDocument();
 
-  const uploadResponse = await fetch(`${baseUrl}/upload`, {
-    method: 'POST',
-    body: formData,
-  });
+  try {
+    assert.match(document.id, /^[0-9a-f-]{36}$/i);
+    assert.strictEqual(document.originalName, 'teste.txt');
+    assert.strictEqual(document.size, 17);
+    assert.strictEqual(document.owner, 'test-user');
+    assert.ok(Number.isFinite(Date.parse(document.uploadedAt)));
+    await access(path.join(storageDirectory, document.id));
+  } finally {
+    await deleteTestDocument(document);
+  }
+});
 
-  assert.strictEqual(uploadResponse.status, 201);
-  const document = await uploadResponse.json();
-  assert.match(document.id, /^[0-9a-f-]{36}$/i);
-  assert.strictEqual(document.originalName, 'teste.txt');
-  assert.strictEqual(document.size, 17);
-  assert.strictEqual(document.owner, 'test-user');
-  assert.ok(Number.isFinite(Date.parse(document.uploadedAt)));
+test('GET /documents retorna os metadados dos documentos', async () => {
+  const document = await createTestDocument();
+
+  try {
+    const response = await fetch(`${baseUrl}/documents`);
+    assert.strictEqual(response.status, 200);
+    assert.deepStrictEqual(await response.json(), [document]);
+  } finally {
+    await deleteTestDocument(document);
+  }
+});
+
+test('GET /documents/:id/download transmite o arquivo como anexo', async () => {
+  const document = await createTestDocument();
+
+  try {
+    const response = await fetch(`${baseUrl}/documents/${document.id}/download`);
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(response.headers.get('content-type'), 'application/octet-stream');
+    assert.match(response.headers.get('content-disposition'), /filename="teste\.txt"/);
+    assert.strictEqual(await response.text(), 'conteudo de teste');
+  } finally {
+    await deleteTestDocument(document);
+  }
+});
+
+test('DELETE /documents/:id remove o arquivo e os metadados', async () => {
+  const document = await createTestDocument();
+  const response = await fetch(`${baseUrl}/documents/${document.id}`, { method: 'DELETE' });
+
+  assert.strictEqual(response.status, 204);
+  assert.strictEqual(await response.text(), '');
+  await assert.rejects(access(path.join(storageDirectory, document.id)), { code: 'ENOENT' });
 
   const listResponse = await fetch(`${baseUrl}/documents`);
   assert.strictEqual(listResponse.status, 200);
-  assert.deepStrictEqual(await listResponse.json(), [document]);
-
-  const downloadResponse = await fetch(`${baseUrl}/documents/${document.id}/download`);
-  assert.strictEqual(downloadResponse.status, 200);
-  assert.strictEqual(downloadResponse.headers.get('content-type'), 'application/octet-stream');
-  assert.match(downloadResponse.headers.get('content-disposition'), /filename="teste\.txt"/);
-  assert.strictEqual(await downloadResponse.text(), 'conteudo de teste');
-
-  const deleteResponse = await fetch(`${baseUrl}/documents/${document.id}`, { method: 'DELETE' });
-  assert.strictEqual(deleteResponse.status, 204);
-  assert.strictEqual(await deleteResponse.text(), '');
-  await assert.rejects(access(path.join(storageDirectory, document.id)), { code: 'ENOENT' });
-
-  const listAfterDeleteResponse = await fetch(`${baseUrl}/documents`);
-  assert.strictEqual(listAfterDeleteResponse.status, 200);
-  assert.deepStrictEqual(await listAfterDeleteResponse.json(), []);
+  assert.deepStrictEqual(await listResponse.json(), []);
 });
 
 test('retorna erros consistentes para arquivo ausente e documento inexistente', async () => {

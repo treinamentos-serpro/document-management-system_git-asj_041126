@@ -8,20 +8,45 @@ function createServiceError(statusCode, code, message, cause) {
   return error;
 }
 
+function createDocumentNotFoundError() {
+  return createServiceError(404, 'DOCUMENT_NOT_FOUND', 'Documento não encontrado.');
+}
+
+function createStorageError(message, cause) {
+  return createServiceError(500, 'STORAGE_ERROR', message, cause);
+}
+
+function findDocumentOrThrow(documentsRepository, id) {
+  const document = documentsRepository.findById(id);
+  if (!document) throw createDocumentNotFoundError();
+  return document;
+}
+
+async function removeFileOrThrow(filesRepository, id, message) {
+  try {
+    await filesRepository.remove(id);
+  } catch (error) {
+    throw createStorageError(message, error);
+  }
+}
+
+async function cleanupFailedRegistration(filesRepository, id, originalError) {
+  try {
+    await filesRepository.remove(id);
+  } catch (cleanupError) {
+    originalError.cleanupError = cleanupError;
+  }
+}
+
 function createDocumentsService({ documentsRepository, filesRepository }) {
   return {
     async registerUpload(file) {
       if (file.size === 0) {
-        try {
-          await filesRepository.remove(file.filename);
-        } catch (error) {
-          throw createServiceError(
-            500,
-            'STORAGE_ERROR',
-            'Não foi possível limpar o arquivo vazio.',
-            error,
-          );
-        }
+        await removeFileOrThrow(
+          filesRepository,
+          file.filename,
+          'Não foi possível limpar o arquivo vazio.',
+        );
         throw createServiceError(400, 'FILE_REQUIRED', 'Envie um arquivo no campo file.');
       }
 
@@ -36,14 +61,8 @@ function createDocumentsService({ documentsRepository, filesRepository }) {
       try {
         return documentsRepository.add(document);
       } catch (error) {
-        try {
-          await filesRepository.remove(document.id);
-        } catch (cleanupError) {
-          error.cleanupError = cleanupError;
-        }
-        throw createServiceError(
-          500,
-          'STORAGE_ERROR',
+        await cleanupFailedRegistration(filesRepository, document.id, error);
+        throw createStorageError(
           'Não foi possível registrar o documento.',
           error,
         );
@@ -55,46 +74,29 @@ function createDocumentsService({ documentsRepository, filesRepository }) {
     },
 
     async deleteDocument(id) {
-      const document = documentsRepository.findById(id);
-      if (!document) {
-        throw createServiceError(404, 'DOCUMENT_NOT_FOUND', 'Documento não encontrado.');
-      }
-
-      try {
-        await filesRepository.remove(document.id);
-      } catch (error) {
-        throw createServiceError(
-          500,
-          'STORAGE_ERROR',
-          'Não foi possível excluir o documento.',
-          error,
-        );
-      }
-
+      const document = findDocumentOrThrow(documentsRepository, id);
+      await removeFileOrThrow(
+        filesRepository,
+        document.id,
+        'Não foi possível excluir o documento.',
+      );
       documentsRepository.remove(document.id);
     },
 
     async getDocumentDownload(id) {
-      const document = documentsRepository.findById(id);
-      if (!document) {
-        throw createServiceError(404, 'DOCUMENT_NOT_FOUND', 'Documento não encontrado.');
-      }
+      const document = findDocumentOrThrow(documentsRepository, id);
 
       let fileExists;
       try {
         fileExists = await filesRepository.fileExists(document.id);
       } catch (error) {
-        throw createServiceError(
-          500,
-          'STORAGE_ERROR',
+        throw createStorageError(
           'Não foi possível acessar o documento.',
           error,
         );
       }
 
-      if (!fileExists) {
-        throw createServiceError(404, 'DOCUMENT_NOT_FOUND', 'Documento não encontrado.');
-      }
+      if (!fileExists) throw createDocumentNotFoundError();
 
       return { document, filePath: filesRepository.getFilePath(document.id) };
     },
